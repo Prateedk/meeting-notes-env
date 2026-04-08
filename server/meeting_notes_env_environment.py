@@ -3,14 +3,17 @@
 The server holds meeting transcripts with ground-truth action items.
 On reset(task=...) the agent receives a transcript.
 On step(action) the agent submits its extracted action items (JSON) and
-receives a reward in [0.0, 1.0] based on fuzzy matching against ground truth.
+receives a reward in [0.0, 1.0] based on semantic matching against ground truth.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
+import math
 import random
 import re
+from collections import Counter
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -22,133 +25,11 @@ try:
 except ImportError:
     from models import MeetingNotesAction, MeetingNotesObservation
 
+try:
+    from .tasks import TASKS
+except ImportError:
+    from server.tasks import TASKS
 
-# ---------------------------------------------------------------------------
-# Task data: transcripts + ground-truth action items
-# ---------------------------------------------------------------------------
-
-TASKS: Dict[str, Dict[str, Any]] = {
-    # ---- EASY: single obvious action item ----
-    "extract_single_1": {
-        "difficulty": "easy",
-        "description": "Extract the single action item from a short meeting snippet.",
-        "transcript": (
-            "Team standup — 9 AM Monday\n"
-            "Alice: The deployment scripts are broken again. "
-            "Bob, can you fix the CI pipeline by end of day Wednesday?\n"
-            "Bob: Sure, I'll get on it.\n"
-            "Alice: Great. Nothing else for today."
-        ),
-        "ground_truth": [
-            {"who": "Bob", "what": "fix the CI pipeline", "deadline": "Wednesday"}
-        ],
-    },
-    "extract_single_2": {
-        "difficulty": "easy",
-        "description": "Extract the single action item from a brief project check-in.",
-        "transcript": (
-            "Project check-in — Tuesday 2 PM\n"
-            "Manager: We need the Q2 budget report. Sarah, please send it to "
-            "finance by Friday.\n"
-            "Sarah: Will do.\n"
-            "Manager: Thanks, that's all."
-        ),
-        "ground_truth": [
-            {"who": "Sarah", "what": "send Q2 budget report to finance", "deadline": "Friday"}
-        ],
-    },
-    # ---- MEDIUM: multiple speakers, several action items ----
-    "extract_multiple_1": {
-        "difficulty": "medium",
-        "description": "Extract all action items from a multi-person planning meeting.",
-        "transcript": (
-            "Sprint planning — Wednesday 10 AM\n"
-            "Alice: We need to finalize the API design. Tom, can you draft the "
-            "OpenAPI spec by Thursday?\n"
-            "Tom: Yes. I'll also need the data models from Priya.\n"
-            "Alice: Priya, send the data model doc to Tom by end of day today.\n"
-            "Priya: Got it.\n"
-            "Alice: Also, Carlos, please update the project timeline on Jira "
-            "before Friday standup.\n"
-            "Carlos: Sure thing."
-        ),
-        "ground_truth": [
-            {"who": "Tom", "what": "draft the OpenAPI spec", "deadline": "Thursday"},
-            {"who": "Priya", "what": "send data model doc to Tom", "deadline": "today"},
-            {"who": "Carlos", "what": "update project timeline on Jira", "deadline": "Friday"},
-        ],
-    },
-    "extract_multiple_2": {
-        "difficulty": "medium",
-        "description": "Extract action items from a cross-team sync meeting.",
-        "transcript": (
-            "Cross-team sync — Thursday 3 PM\n"
-            "Dev lead: The staging environment keeps crashing. Jun, investigate "
-            "the memory leak and file a report by Monday.\n"
-            "Jun: On it.\n"
-            "Dev lead: QA team — Lisa, write regression tests for the payments "
-            "module. Target next Wednesday.\n"
-            "Lisa: Will do.\n"
-            "Dev lead: And marketing — Dave, prepare the launch announcement "
-            "draft by next Tuesday.\n"
-            "Dave: Understood."
-        ),
-        "ground_truth": [
-            {"who": "Jun", "what": "investigate memory leak and file report", "deadline": "Monday"},
-            {"who": "Lisa", "what": "write regression tests for payments module", "deadline": "Wednesday"},
-            {"who": "Dave", "what": "prepare launch announcement draft", "deadline": "Tuesday"},
-        ],
-    },
-    # ---- HARD: ambiguous, implicit deadlines, overlapping responsibilities ----
-    "extract_ambiguous_1": {
-        "difficulty": "hard",
-        "description": "Extract action items from a messy meeting with vague commitments and implicit deadlines.",
-        "transcript": (
-            "Quarterly review — Friday 11 AM\n"
-            "VP: Revenue is down 8%. I want the root cause analysis before the "
-            "board meeting next Thursday.\n"
-            "Finance lead: We can probably pull the numbers together... I'll try "
-            "to loop in analytics.\n"
-            "VP: Rachel, own the analysis. Coordinate with analytics and have a "
-            "draft slide deck before Wednesday so I can review it.\n"
-            "Rachel: Okay. Should I also update the forecast model?\n"
-            "VP: Yes — update the forecast model too. Same deadline.\n"
-            "VP: Oh and someone should book the boardroom. Mike, can you handle "
-            "logistics?\n"
-            "Mike: I'll take care of it by Monday."
-        ),
-        "ground_truth": [
-            {"who": "Rachel", "what": "prepare root cause analysis slide deck", "deadline": "Wednesday"},
-            {"who": "Rachel", "what": "update the forecast model", "deadline": "Wednesday"},
-            {"who": "Mike", "what": "book the boardroom and handle logistics", "deadline": "Monday"},
-        ],
-    },
-    "extract_ambiguous_2": {
-        "difficulty": "hard",
-        "description": "Extract action items from an informal meeting with implied owners and fuzzy deadlines.",
-        "transcript": (
-            "Ad-hoc sync — Monday afternoon\n"
-            "Team lead: The client demo is sometime next week, probably Thursday "
-            "or Friday. We need the frontend polished.\n"
-            "Nora: I can handle the UI fixes. Might need design assets from "
-            "Sam though.\n"
-            "Team lead: Sam, get the updated mockups to Nora soon — let's say "
-            "by tomorrow end of day.\n"
-            "Sam: Okay.\n"
-            "Team lead: Also, we realized nobody wrote the demo script. Nora, "
-            "since you know the flow, can you draft it before Wednesday?\n"
-            "Nora: Sure, I'll handle both.\n"
-            "Team lead: And everyone — please test your features on staging before "
-            "the demo. No specific deadline but do it before Thursday at latest."
-        ),
-        "ground_truth": [
-            {"who": "Nora", "what": "fix frontend UI issues", "deadline": "before demo"},
-            {"who": "Sam", "what": "send updated mockups to Nora", "deadline": "tomorrow"},
-            {"who": "Nora", "what": "draft the demo script", "deadline": "Wednesday"},
-            {"who": "everyone", "what": "test features on staging", "deadline": "Thursday"},
-        ],
-    },
-}
 
 TASK_IDS_BY_DIFFICULTY = {
     "easy": [k for k, v in TASKS.items() if v["difficulty"] == "easy"],
@@ -160,34 +41,134 @@ ALL_TASK_IDS = list(TASKS.keys())
 
 
 # ---------------------------------------------------------------------------
-# Grading helpers
+# Semantic scoring helpers
 # ---------------------------------------------------------------------------
 
 def _normalize(text: str) -> str:
-    """Lowercase, strip, collapse whitespace."""
-    return re.sub(r"\s+", " ", text.lower().strip())
+    """Lowercase, strip, collapse whitespace, remove punctuation."""
+    text = re.sub(r"[^\w\s]", " ", text.lower().strip())
+    return re.sub(r"\s+", " ", text).strip()
 
 
-def _fuzzy_match(predicted: str, expected: str, threshold: float = 0.45) -> bool:
-    """Token-overlap ratio as a simple fuzzy matcher."""
-    pred_tokens = set(_normalize(predicted).split())
-    exp_tokens = set(_normalize(expected).split())
-    if not exp_tokens:
-        return not pred_tokens
-    overlap = pred_tokens & exp_tokens
-    ratio = len(overlap) / max(len(exp_tokens), 1)
-    return ratio >= threshold
+def _tokenize(text: str) -> List[str]:
+    return _normalize(text).split()
 
+
+def _ngrams(tokens: List[str], n: int) -> List[str]:
+    return [" ".join(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
+
+
+def _token_overlap(text1: str, text2: str) -> float:
+    """Jaccard-style token overlap ratio."""
+    t1 = set(_tokenize(text1))
+    t2 = set(_tokenize(text2))
+    if not t1 and not t2:
+        return 1.0
+    if not t1 or not t2:
+        return 0.0
+    intersection = t1 & t2
+    union = t1 | t2
+    return len(intersection) / len(union)
+
+
+def _bigram_overlap(text1: str, text2: str) -> float:
+    """Bigram overlap for capturing phrase-level similarity."""
+    t1 = _tokenize(text1)
+    t2 = _tokenize(text2)
+    bg1 = Counter(_ngrams(t1, 2))
+    bg2 = Counter(_ngrams(t2, 2))
+    if not bg1 and not bg2:
+        return 1.0
+    if not bg1 or not bg2:
+        return 0.0
+    intersection = sum((bg1 & bg2).values())
+    total = sum(bg1.values()) + sum(bg2.values())
+    return 2.0 * intersection / total if total > 0 else 0.0
+
+
+def _sequence_similarity(text1: str, text2: str) -> float:
+    """SequenceMatcher ratio for edit-distance-style similarity."""
+    return difflib.SequenceMatcher(
+        None, _normalize(text1), _normalize(text2)
+    ).ratio()
+
+
+def _tfidf_cosine(text1: str, text2: str) -> float:
+    """TF-IDF cosine similarity without sklearn (pure Python)."""
+    t1 = _tokenize(text1)
+    t2 = _tokenize(text2)
+    if not t1 or not t2:
+        return 0.0
+
+    all_tokens = list(set(t1 + t2))
+    n_docs = 2
+
+    df = {}
+    for tok in all_tokens:
+        df[tok] = (1 if tok in set(t1) else 0) + (1 if tok in set(t2) else 0)
+
+    def tfidf_vec(tokens: List[str]) -> Dict[str, float]:
+        tf = Counter(tokens)
+        vec = {}
+        for tok in all_tokens:
+            tf_val = tf.get(tok, 0) / len(tokens)
+            idf_val = math.log((1 + n_docs) / (1 + df[tok])) + 1
+            vec[tok] = tf_val * idf_val
+        return vec
+
+    v1 = tfidf_vec(t1)
+    v2 = tfidf_vec(t2)
+
+    dot = sum(v1[k] * v2[k] for k in all_tokens)
+    mag1 = math.sqrt(sum(v ** 2 for v in v1.values()))
+    mag2 = math.sqrt(sum(v ** 2 for v in v2.values()))
+
+    if mag1 == 0 or mag2 == 0:
+        return 0.0
+    return dot / (mag1 * mag2)
+
+
+def _semantic_score(predicted: str, expected: str) -> float:
+    """Combined semantic similarity using multiple signals.
+
+    Returns a float in [0, 1] blending:
+      - Token overlap (Jaccard)    : 20%
+      - Bigram overlap             : 20%
+      - Sequence matching (edit)   : 25%
+      - TF-IDF cosine similarity   : 35%
+    """
+    if not predicted.strip() and not expected.strip():
+        return 1.0
+    if not predicted.strip() or not expected.strip():
+        return 0.0
+
+    tok_score = _token_overlap(predicted, expected)
+    bg_score = _bigram_overlap(predicted, expected)
+    seq_score = _sequence_similarity(predicted, expected)
+    tfidf_score = _tfidf_cosine(predicted, expected)
+
+    return (
+        0.20 * tok_score
+        + 0.20 * bg_score
+        + 0.25 * seq_score
+        + 0.35 * tfidf_score
+    )
+
+
+# ---------------------------------------------------------------------------
+# Grading
+# ---------------------------------------------------------------------------
 
 def _grade_action_items(
     predicted: List[Dict[str, str]],
     expected: List[Dict[str, str]],
 ) -> tuple[float, str]:
-    """Grade predicted action items against ground truth.
+    """Grade predicted action items against ground truth using semantic similarity.
 
     Returns (reward, feedback_text) where reward is in [0.0, 1.0].
-    Each ground-truth item can match at most one prediction (greedy).
-    Per matched item: who=0.33, what=0.34, deadline=0.33.
+    Each ground-truth item is matched to the best prediction (greedy).
+    Per matched item the score is a weighted blend of field similarities:
+      who=0.30, what=0.40, deadline=0.30
     """
     if not expected:
         return (1.0, "No action items expected.") if not predicted else (0.0, "No items expected but you returned some.")
@@ -199,29 +180,45 @@ def _grade_action_items(
     for ei, exp in enumerate(expected):
         best_score = 0.0
         best_pi = -1
+        best_breakdown = {"who": 0.0, "what": 0.0, "deadline": 0.0}
+
         for pi, pred in enumerate(predicted):
             if pi in matched_preds:
                 continue
-            s = 0.0
-            if _fuzzy_match(pred.get("who", ""), exp["who"]):
-                s += 0.33
-            if _fuzzy_match(pred.get("what", ""), exp["what"]):
-                s += 0.34
-            if _fuzzy_match(pred.get("deadline", ""), exp["deadline"]):
-                s += 0.33
+
+            who_sim = _semantic_score(pred.get("who", ""), exp["who"])
+            what_sim = _semantic_score(pred.get("what", ""), exp["what"])
+            deadline_sim = _semantic_score(pred.get("deadline", ""), exp["deadline"])
+
+            s = 0.30 * who_sim + 0.40 * what_sim + 0.30 * deadline_sim
+
             if s > best_score:
                 best_score = s
                 best_pi = pi
+                best_breakdown = {
+                    "who": round(who_sim, 2),
+                    "what": round(what_sim, 2),
+                    "deadline": round(deadline_sim, 2),
+                }
+
         if best_pi >= 0:
             matched_preds.add(best_pi)
+
         item_scores.append(best_score)
-        details.append(f"Item {ei+1}: {best_score:.2f}/1.00")
+        details.append(
+            f"Item {ei+1}: {best_score:.3f} "
+            f"(who={best_breakdown['who']}, what={best_breakdown['what']}, "
+            f"deadline={best_breakdown['deadline']})"
+        )
 
     reward = sum(item_scores) / len(expected)
-    penalty_for_extra = max(0, len(predicted) - len(expected)) * 0.05
-    reward = max(0.0, min(1.0, reward - penalty_for_extra))
 
-    feedback = "; ".join(details) + f" | Final reward: {reward:.3f}"
+    extra = max(0, len(predicted) - len(expected))
+    missing = len(expected) - len(matched_preds)
+    penalty = extra * 0.05 + missing * 0.02
+    reward = max(0.0, min(1.0, reward - penalty))
+
+    feedback = "; ".join(details) + f" | Extra: {extra}, Missing: {missing} | Final: {reward:.4f}"
     return round(reward, 4), feedback
 
 
@@ -232,8 +229,9 @@ def _grade_action_items(
 class MeetingNotesEnvironment(Environment):
     """Meeting Notes → Action Items extraction environment.
 
-    Supports 3 difficulty levels with 2 transcripts each (6 tasks total).
+    32 tasks across 3 difficulty levels (easy/medium/hard).
     Single-step episodes: reset → agent reads transcript → step with answer → done.
+    Semantic similarity scoring for nuanced partial credit.
     """
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True

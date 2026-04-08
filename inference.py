@@ -34,12 +34,15 @@ ENV_URL = os.getenv("ENV_URL", "https://prateekdebit-meeting-notes-env.hf.space"
 # ---------------------------------------------------------------------------
 
 TASK_IDS = [
-    "extract_single_1",
-    "extract_single_2",
-    "extract_multiple_1",
-    "extract_multiple_2",
-    "extract_ambiguous_1",
-    "extract_ambiguous_2",
+    # Easy (10)
+    "easy_1", "easy_2", "easy_3", "easy_4", "easy_5",
+    "easy_6", "easy_7", "easy_8", "easy_9", "easy_10",
+    # Medium (10)
+    "medium_1", "medium_2", "medium_3", "medium_4", "medium_5",
+    "medium_6", "medium_7", "medium_8", "medium_9", "medium_10",
+    # Hard (12)
+    "hard_1", "hard_2", "hard_3", "hard_4", "hard_5", "hard_6",
+    "hard_7", "hard_8", "hard_9", "hard_10", "hard_11", "hard_12",
 ]
 
 SYSTEM_PROMPT = """\
