@@ -65,6 +65,10 @@ COPY --from=builder /app/env/.venv /app/.venv
 # Copy the environment code
 COPY --from=builder /app/env /app/env
 
+# Make README visible to the OpenEnv web interface
+COPY --from=builder /app/env/README.md /app/README.md
+ENV ENV_README_PATH=/app/README.md
+
 # Set PATH to use the virtual environment
 ENV PATH="/app/.venv/bin:$PATH"
 
