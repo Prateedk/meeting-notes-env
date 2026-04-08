@@ -121,7 +121,8 @@ def main() -> None:
         try:
             # --- [START] ---
             print(
-                f"[START] task={task_id} env=meeting_notes_env model={MODEL_NAME}"
+                f"[START] task={task_id} env=meeting_notes_env model={MODEL_NAME}",
+                flush=True,
             )
 
             # Reset to get transcript
@@ -163,7 +164,8 @@ def main() -> None:
             error_out = error_str if error_str else "null"
             print(
                 f"[STEP] step=1 action={action_str} "
-                f"reward={reward:.2f} done={done_str} error={error_out}"
+                f"reward={reward:.2f} done={done_str} error={error_out}",
+                flush=True,
             )
 
         except Exception as exc:
@@ -173,14 +175,18 @@ def main() -> None:
             steps = max(steps, 1)
             print(
                 f"[STEP] step={steps} action=error "
-                f"reward=0.00 done=true error={last_error}"
+                f"reward=0.00 done=true error={last_error}",
+                flush=True,
             )
 
         # --- [END] ---
+        score = all_rewards[-1] if all_rewards else 0.0
+        score = min(max(score, 0.0), 1.0)
         success_str = "true" if success else "false"
         rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
         print(
-            f"[END] success={success_str} steps={steps} rewards={rewards_str}"
+            f"[END] success={success_str} steps={steps} score={score:.2f} rewards={rewards_str}",
+            flush=True,
         )
 
 
