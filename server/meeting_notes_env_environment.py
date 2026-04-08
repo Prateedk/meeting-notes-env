@@ -288,11 +288,28 @@ class MeetingNotesEnvironment(Environment):
         if not self._current_task_id:
             self.reset()
 
+        raw = action.message.strip()
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            payload = None
+
+        if isinstance(payload, dict) and "task_id" in payload and "items" in payload:
+            tid = payload["task_id"]
+            if tid in TASKS:
+                self._current_task_id = tid
+            predicted = payload["items"]
+            if isinstance(predicted, dict):
+                predicted = [predicted]
+        else:
+            predicted = payload
+
         t = TASKS[self._current_task_id]
         expected = t["ground_truth"]
 
         try:
-            predicted = json.loads(action.message)
+            if predicted is None:
+                raise ValueError("Could not parse JSON from action message.")
             if isinstance(predicted, dict):
                 predicted = [predicted]
             if not isinstance(predicted, list):

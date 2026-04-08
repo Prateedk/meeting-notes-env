@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""Baseline inference script for the Meeting Notes → Action Items environment.
-
-Uses the OpenAI Client to call an LLM that reads meeting transcripts and
-extracts structured action items.
+"""Baseline inference for the Meeting Notes → Action Items environment.
 
 Required environment variables:
-    API_BASE_URL  — OpenAI-compatible endpoint (e.g. https://router.huggingface.co/v1)
-    MODEL_NAME    — model identifier
-    HF_TOKEN      — API key / Hugging Face token
-
-Structured logging follows the [START], [STEP], [END] format required by
-the Scaler / Meta-PyTorch OpenEnv hackathon evaluation system.
+    API_BASE_URL  — OpenAI-compatible endpoint (must have a default)
+    MODEL_NAME    — model identifier (must have a default)
+    HF_TOKEN      — Hugging Face / API key (mandatory, no default)
 """
 
 from __future__ import annotations
@@ -18,28 +12,26 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
-from pathlib import Path
 
+import requests
 from openai import OpenAI
 
 # ---------------------------------------------------------------------------
-# Env client imports
-# ---------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from client import MeetingNotesEnv  # noqa: E402
-from models import MeetingNotesAction  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Configuration
+# Environment variables (per hackathon spec)
 # ---------------------------------------------------------------------------
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN = os.getenv("HF_TOKEN")
 
-ENV_URL = os.environ.get("ENV_URL", "http://localhost:8000")
+if HF_TOKEN is None:
+    raise ValueError("HF_TOKEN environment variable is required")
+
+ENV_URL = os.getenv("ENV_URL", "https://prateekdebit-meeting-notes-env.hf.space")
+
+# ---------------------------------------------------------------------------
+# Tasks to evaluate (3 difficulty levels × 2 each = 6)
+# ---------------------------------------------------------------------------
 
 TASK_IDS = [
     "extract_single_1",
@@ -61,13 +53,14 @@ Return ONLY the JSON array, no markdown, no explanation. Example:
 [{"who":"Alice","what":"send the report","deadline":"Friday"}]
 If there are multiple action items return them all in the array."""
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _call_llm(client: OpenAI, transcript: str, num_expected: int) -> str:
-    """Ask the LLM to extract action items from a transcript."""
+client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+
+
+def call_llm(transcript: str, num_expected: int) -> str:
     user_msg = (
         f"Meeting transcript:\n\n{transcript}\n\n"
         f"There are {num_expected} action item(s) to find. "
@@ -85,8 +78,7 @@ def _call_llm(client: OpenAI, transcript: str, num_expected: int) -> str:
     return response.choices[0].message.content.strip()
 
 
-def _clean_json(raw: str) -> str:
-    """Strip markdown fences if the model wraps its JSON in ```."""
+def clean_json(raw: str) -> str:
     raw = raw.strip()
     if raw.startswith("```"):
         lines = raw.split("\n")
@@ -95,65 +87,101 @@ def _clean_json(raw: str) -> str:
     return raw
 
 
+def env_reset(task_id: str) -> dict:
+    resp = requests.post(
+        f"{ENV_URL}/reset",
+        json={"task": task_id},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def env_step(message: str) -> dict:
+    resp = requests.post(
+        f"{ENV_URL}/step",
+        json={"action": {"message": message}},
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    if not HF_TOKEN:
-        print("WARNING: HF_TOKEN not set. LLM calls may fail.", file=sys.stderr)
+    for task_id in TASK_IDS:
+        all_rewards: list[float] = []
+        success = False
+        steps = 0
+        last_error = "null"
 
-    llm_client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+        try:
+            # --- [START] ---
+            print(
+                f"[START] task={task_id} env=meeting_notes_env model={MODEL_NAME}"
+            )
 
-    results = []
+            # Reset to get transcript
+            reset_data = env_reset(task_id)
+            obs = reset_data.get("observation", reset_data)
+            transcript = obs.get("transcript", "")
+            num_expected = obs.get("num_expected", 0)
 
-    print(f"[START] task_count={len(TASK_IDS)} model={MODEL_NAME}")
-
-    env = MeetingNotesEnv(base_url=ENV_URL).sync()
-    env.connect()
-
-    try:
-        for idx, task_id in enumerate(TASK_IDS):
-            step_start = time.time()
-
-            result = env.reset(task=task_id)
-            obs = result.observation
-            transcript = obs.transcript
-            num_expected = obs.num_expected
-
-            raw_answer = _call_llm(llm_client, transcript, num_expected)
-            cleaned = _clean_json(raw_answer)
+            # Call LLM
+            raw_answer = call_llm(transcript, num_expected)
+            cleaned = clean_json(raw_answer)
 
             try:
                 parsed = json.loads(cleaned)
                 if isinstance(parsed, dict):
                     parsed = [parsed]
-                answer_json = json.dumps(parsed)
+                items = parsed
             except json.JSONDecodeError:
-                answer_json = cleaned
+                items = []
 
-            step_result = env.step(MeetingNotesAction(message=answer_json))
-            reward = step_result.reward or 0.0
-            feedback = step_result.observation.feedback
-            done = step_result.done
+            action_str = json.dumps(items)
 
-            elapsed = time.time() - step_start
+            # Build combined payload so stateless HTTP step knows the task
+            step_payload = json.dumps({"task_id": task_id, "items": items})
 
+            # Step
+            step_data = env_step(step_payload)
+            step_obs = step_data.get("observation", step_data)
+            reward = float(step_data.get("reward", step_obs.get("reward", 0.0)) or 0.0)
+            done = step_data.get("done", step_obs.get("done", True))
+            error_str = step_obs.get("metadata", {}).get("error", None)
+
+            steps = 1
+            all_rewards.append(reward)
+            success = reward > 0.0
+
+            # --- [STEP] ---
+            done_str = "true" if done else "false"
+            error_out = error_str if error_str else "null"
             print(
-                f"[STEP] task_id={task_id} "
-                f"step={idx + 1} "
-                f"reward={reward} "
-                f"done={done} "
-                f"elapsed={elapsed:.2f}s "
-                f"feedback={feedback}"
+                f"[STEP] step=1 action={action_str} "
+                f"reward={reward:.2f} done={done_str} error={error_out}"
             )
 
-            results.append({"task_id": task_id, "reward": reward})
-    finally:
-        env.close()
+        except Exception as exc:
+            last_error = str(exc)
+            if not all_rewards:
+                all_rewards.append(0.0)
+            steps = max(steps, 1)
+            print(
+                f"[STEP] step={steps} action=error "
+                f"reward=0.00 done=true error={last_error}"
+            )
 
-    avg_reward = sum(r["reward"] for r in results) / max(len(results), 1)
-    print(f"[END] avg_reward={avg_reward:.4f} total_tasks={len(results)}")
+        # --- [END] ---
+        success_str = "true" if success else "false"
+        rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
+        print(
+            f"[END] success={success_str} steps={steps} rewards={rewards_str}"
+        )
 
 
 if __name__ == "__main__":
