@@ -264,7 +264,8 @@ class MeetingNotesEnvironment(Environment):
 
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._state = State(episode_id=str(uuid4()), step_count=0)
         self._current_task_id: str = ""
         self._done: bool = False
