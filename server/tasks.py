@@ -1,10 +1,11 @@
 """Task definitions for Meeting Notes → Action Items environment.
 
-32 tasks across 3 difficulty levels:
-  - Easy (10):  Short transcripts, 1 action item, explicit assignment
-  - Medium (10): Multi-speaker, 3-4 action items, clear but spread across dialogue
-  - Hard (12):  Long transcripts, implicit owners, vague deadlines, red herrings,
-                superseded decisions, cross-references, negated actions
+50 tasks across 3 difficulty levels:
+  - Easy (15):  Short transcripts, 1 action item, explicit assignment
+  - Medium (15): Multi-speaker, 3-4 action items, clear but spread across dialogue
+  - Hard (20):  Long transcripts, implicit owners, vague deadlines, red herrings,
+                superseded decisions, cross-references, negated actions,
+                delegation chains, conditional tasks, multi-meeting merges
 """
 
 from __future__ import annotations
@@ -898,6 +899,492 @@ TASKS: Dict[str, Dict[str, Any]] = {
             {"who": "Carlos", "what": "finish staging environment setup with SSL configuration", "deadline": "Thursday"},
             {"who": "Fatima", "what": "complete remaining two API endpoints", "deadline": "Friday"},
             {"who": "Gita", "what": "prepare realistic demo data covering all user personas and load in staging", "deadline": "next Wednesday"},
+        ],
+    },
+
+    # =====================================================================
+    # EASY 11-15 — additional single-item extractions
+    # =====================================================================
+
+    "easy_11": {
+        "difficulty": "easy",
+        "description": "Extract the action item from a legal compliance check-in.",
+        "transcript": (
+            "Legal compliance check-in — Monday 11 AM\n"
+            "General Counsel: The new data privacy regulation takes effect next month. "
+            "Anita, review all our data processing agreements and flag any non-compliant "
+            "clauses by next Friday.\n"
+            "Anita: I'll start with the top 10 vendors.\n"
+            "General Counsel: Good."
+        ),
+        "ground_truth": [
+            {"who": "Anita", "what": "review data processing agreements and flag non-compliant clauses", "deadline": "next Friday"}
+        ],
+    },
+    "easy_12": {
+        "difficulty": "easy",
+        "description": "Extract the action item from a customer support standup.",
+        "transcript": (
+            "Support standup — Tuesday 9 AM\n"
+            "Support Manager: Ticket backlog is growing. Raj, triage all P1 tickets "
+            "from the weekend and assign them to the right team by noon today.\n"
+            "Raj: On it.\n"
+            "Support Manager: Thanks."
+        ),
+        "ground_truth": [
+            {"who": "Raj", "what": "triage all P1 tickets from the weekend and assign them", "deadline": "noon today"}
+        ],
+    },
+    "easy_13": {
+        "difficulty": "easy",
+        "description": "Extract the action item from a research sync.",
+        "transcript": (
+            "Research sync — Wednesday 3 PM\n"
+            "Research Lead: The benchmark results look promising but we need to validate "
+            "on the full dataset. Mika, run the evaluation pipeline on the production "
+            "dataset and share results by Monday.\n"
+            "Mika: I'll queue the jobs tonight.\n"
+            "Research Lead: Perfect."
+        ),
+        "ground_truth": [
+            {"who": "Mika", "what": "run evaluation pipeline on production dataset and share results", "deadline": "Monday"}
+        ],
+    },
+    "easy_14": {
+        "difficulty": "easy",
+        "description": "Extract the action item from a partnership discussion.",
+        "transcript": (
+            "Partnership discussion — Thursday 1 PM\n"
+            "BD Manager: The joint press release with Nexus Corp needs to go out next "
+            "week. Ella, draft the co-branded press release and send it to their comms "
+            "team for approval by Wednesday.\n"
+            "Ella: I'll use the template from last quarter.\n"
+            "BD Manager: Sounds good."
+        ),
+        "ground_truth": [
+            {"who": "Ella", "what": "draft co-branded press release and send to Nexus Corp comms team for approval", "deadline": "Wednesday"}
+        ],
+    },
+    "easy_15": {
+        "difficulty": "easy",
+        "description": "Extract the action item from a data engineering standup.",
+        "transcript": (
+            "Data engineering standup — Friday 10 AM\n"
+            "Data Lead: The ETL pipeline for the new data warehouse is failing silently. "
+            "Vikram, add error logging and alerting to the pipeline and have it deployed "
+            "by end of day Tuesday.\n"
+            "Vikram: I'll add Slack alerts too.\n"
+            "Data Lead: Great idea."
+        ),
+        "ground_truth": [
+            {"who": "Vikram", "what": "add error logging and alerting to the ETL pipeline and deploy", "deadline": "end of day Tuesday"}
+        ],
+    },
+
+    # =====================================================================
+    # MEDIUM 11-15 — additional multi-speaker meetings
+    # =====================================================================
+
+    "medium_11": {
+        "difficulty": "medium",
+        "description": "Extract action items from a product launch readiness meeting.",
+        "transcript": (
+            "Launch readiness — Product v5.0 — Monday 10 AM\n"
+            "PM: Launch is next Thursday. Status check.\n"
+            "PM: Nadia, the feature flag for the new pricing tier needs to be enabled "
+            "in production. Do it Tuesday morning so we have buffer.\n"
+            "Nadia: I'll coordinate with DevOps.\n"
+            "PM: Oscar, the migration script for existing customers needs testing. "
+            "Run it against the staging clone by Wednesday.\n"
+            "Oscar: The script is ready, just needs validation.\n"
+            "PM: And Petra, the launch email sequence — is copy finalized?\n"
+            "Petra: Almost. I need product screenshots.\n"
+            "PM: Get them from design. Petra, finalize the launch email sequence "
+            "including screenshots by Wednesday evening.\n"
+            "Petra: Got it."
+        ),
+        "ground_truth": [
+            {"who": "Nadia", "what": "enable feature flag for new pricing tier in production", "deadline": "Tuesday morning"},
+            {"who": "Oscar", "what": "test migration script for existing customers against staging clone", "deadline": "Wednesday"},
+            {"who": "Petra", "what": "finalize launch email sequence including product screenshots", "deadline": "Wednesday evening"},
+        ],
+    },
+    "medium_12": {
+        "difficulty": "medium",
+        "description": "Extract action items from a security review meeting.",
+        "transcript": (
+            "Security review — quarterly — Tuesday 2 PM\n"
+            "CISO: Three priorities this quarter.\n"
+            "CISO: First, Quincy, complete the penetration test on the new API "
+            "gateway. Report due by next Monday.\n"
+            "Quincy: I'll use the OWASP methodology.\n"
+            "CISO: Second, Reema, implement certificate pinning for the mobile app. "
+            "Both iOS and Android. Target next Wednesday.\n"
+            "Reema: I'll need updated certs from IT.\n"
+            "CISO: Request them today. Third, Sanjay, audit all service account "
+            "permissions and remove any over-privileged access. Due next Friday.\n"
+            "Sanjay: I'll generate the access report first.\n"
+            "CISO: Good. Weekly check-ins until these are done."
+        ),
+        "ground_truth": [
+            {"who": "Quincy", "what": "complete penetration test on new API gateway and submit report", "deadline": "next Monday"},
+            {"who": "Reema", "what": "implement certificate pinning for mobile app on iOS and Android", "deadline": "next Wednesday"},
+            {"who": "Sanjay", "what": "audit service account permissions and remove over-privileged access", "deadline": "next Friday"},
+        ],
+    },
+    "medium_13": {
+        "difficulty": "medium",
+        "description": "Extract action items from a content strategy meeting.",
+        "transcript": (
+            "Content strategy — Q3 planning — Wednesday 11 AM\n"
+            "Content Lead: We need to ramp up our thought leadership.\n"
+            "Content Lead: Tara, write a technical blog post about our ML pipeline "
+            "architecture. Target 2000 words. Draft by next Monday.\n"
+            "Tara: I'll interview the ML team for details.\n"
+            "Content Lead: Uma, produce a 3-minute product demo video for the new "
+            "dashboard features. Script and recording done by next Thursday.\n"
+            "Uma: I'll book the studio.\n"
+            "Content Lead: And Vince, update the case study page with the three "
+            "new customer stories from Q2. Add metrics where available. Done by "
+            "next Friday.\n"
+            "Vince: I'll reach out to the customers for approval.\n"
+            "Content Lead: Let's aim for quality over quantity."
+        ),
+        "ground_truth": [
+            {"who": "Tara", "what": "write technical blog post about ML pipeline architecture", "deadline": "next Monday"},
+            {"who": "Uma", "what": "produce 3-minute product demo video for new dashboard features", "deadline": "next Thursday"},
+            {"who": "Vince", "what": "update case study page with three new Q2 customer stories", "deadline": "next Friday"},
+        ],
+    },
+    "medium_14": {
+        "difficulty": "medium",
+        "description": "Extract action items from a platform migration planning meeting.",
+        "transcript": (
+            "Platform migration planning — Thursday 9 AM\n"
+            "Architect: We're moving from Heroku to AWS ECS. Three work streams.\n"
+            "Architect: Wendy, create Terraform modules for the ECS cluster, ALB, "
+            "and RDS instances. Have the infra-as-code ready by next Tuesday.\n"
+            "Wendy: I'll base it on the reference architecture.\n"
+            "Architect: Xavier, update all application Dockerfiles to be multi-stage "
+            "and optimize image sizes. Target under 200MB per image. Due next Wednesday.\n"
+            "Xavier: Some of them are bloated with dev dependencies.\n"
+            "Architect: Exactly. And Yara, set up the CI/CD pipeline in GitHub Actions "
+            "to build, test, and deploy to ECS. Include staging and production environments. "
+            "Target next Friday.\n"
+            "Yara: I'll need the Terraform outputs from Wendy.\n"
+            "Architect: Coordinate with each other. Dependencies are clear."
+        ),
+        "ground_truth": [
+            {"who": "Wendy", "what": "create Terraform modules for ECS cluster ALB and RDS instances", "deadline": "next Tuesday"},
+            {"who": "Xavier", "what": "update application Dockerfiles to multi-stage and optimize image sizes under 200MB", "deadline": "next Wednesday"},
+            {"who": "Yara", "what": "set up CI/CD pipeline in GitHub Actions for build test and deploy to ECS", "deadline": "next Friday"},
+        ],
+    },
+    "medium_15": {
+        "difficulty": "medium",
+        "description": "Extract action items from an accessibility review meeting.",
+        "transcript": (
+            "Accessibility audit follow-up — Friday 2 PM\n"
+            "A11y Lead: The audit found 23 issues. Let's tackle the critical ones.\n"
+            "A11y Lead: Zara, fix all color contrast violations on the main dashboard "
+            "and settings pages. There are 8 failures. Due next Monday.\n"
+            "Zara: I'll update the design tokens.\n"
+            "A11y Lead: Adam, add keyboard navigation support to the modal dialogs "
+            "and dropdown menus. Users can't tab through them. Due next Wednesday.\n"
+            "Adam: I'll use the WAI-ARIA patterns.\n"
+            "A11y Lead: And Bella, add screen reader labels to all icon-only buttons "
+            "and images. There are about 30 unlabeled elements. Due next Friday.\n"
+            "Bella: I'll go through them systematically.\n"
+            "A11y Lead: We need WCAG AA compliance before the next release."
+        ),
+        "ground_truth": [
+            {"who": "Zara", "what": "fix color contrast violations on main dashboard and settings pages", "deadline": "next Monday"},
+            {"who": "Adam", "what": "add keyboard navigation support to modal dialogs and dropdown menus", "deadline": "next Wednesday"},
+            {"who": "Bella", "what": "add screen reader labels to all icon-only buttons and images", "deadline": "next Friday"},
+        ],
+    },
+
+    # =====================================================================
+    # HARD 13-20 — adversarial, complex, multi-meeting scenarios
+    # =====================================================================
+
+    "hard_13": {
+        "difficulty": "hard",
+        "description": "Meeting where tasks are delegated through a chain — A assigns to B who re-delegates to C.",
+        "transcript": (
+            "Engineering leadership sync — Monday 9 AM\n"
+            "VP Eng: We need to upgrade all services to Python 3.12 before end of quarter.\n"
+            "VP Eng: Director team — figure out who owns this.\n"
+            "Director A (Kenji): My team can do the core services.\n"
+            "VP Eng: Kenji, you own core services migration. Plan by next Friday.\n"
+            "Kenji: Actually, my tech lead Lena knows the codebase better. Lena, can "
+            "you handle the migration plan?\n"
+            "Lena: Sure, I'll do the assessment this week.\n"
+            "VP Eng: Fine, but Kenji, you're still accountable for delivery.\n"
+            "Director B (Nora): What about the data pipeline services?\n"
+            "VP Eng: Nora, those are yours. Same deadline — migration plan by next Friday.\n"
+            "Nora: My team is stretched thin. Can I borrow someone?\n"
+            "VP Eng: Talk to Kenji. But I need the plan on time regardless.\n"
+            "VP Eng: Also, the shared libraries — the platform team should handle those. "
+            "Platform lead?\n"
+            "Platform Lead (Owen): I'll assess the shared libs. But some depend on "
+            "the core services migrating first.\n"
+            "VP Eng: Understood. Owen, give me a dependency analysis and shared library "
+            "migration plan by next Wednesday.\n"
+            "Owen: Will do."
+        ),
+        "ground_truth": [
+            {"who": "Kenji", "what": "own core services Python 3.12 migration and deliver plan", "deadline": "next Friday"},
+            {"who": "Nora", "what": "deliver data pipeline services Python 3.12 migration plan", "deadline": "next Friday"},
+            {"who": "Owen", "what": "provide dependency analysis and shared library migration plan", "deadline": "next Wednesday"},
+        ],
+    },
+    "hard_14": {
+        "difficulty": "hard",
+        "description": "Meeting with tasks assigned to roles not people, requiring inference of who.",
+        "transcript": (
+            "Incident readiness review — Wednesday 2 PM\n"
+            "Director: After last month's incident, we're tightening processes.\n"
+            "Director: The on-call engineer needs to update the runbook for database "
+            "failover. That's currently... who's on call this week?\n"
+            "SRE Manager: Patel is on call.\n"
+            "Director: Patel, update the database failover runbook with the lessons "
+            "from incident #427. Due by Monday.\n"
+            "Patel: I'll review the postmortem first.\n"
+            "Director: The incident commander role rotates — next IC is Simone.\n"
+            "Director: Simone, run a tabletop exercise with the team next Thursday. "
+            "Use a scenario similar to incident #427.\n"
+            "Simone: I'll prepare the scenario doc.\n"
+            "Director: And whoever manages the alerting — that's you, right, Tariq?\n"
+            "Tariq: Yes.\n"
+            "Director: Tariq, reduce the alert noise by tuning thresholds. We got 200 "
+            "alerts during the last incident and most were duplicates. Clean it up by "
+            "next Friday.\n"
+            "Tariq: I've been meaning to do that.\n"
+            "Director: No more meaning to. Do it."
+        ),
+        "ground_truth": [
+            {"who": "Patel", "what": "update database failover runbook with lessons from incident #427", "deadline": "Monday"},
+            {"who": "Simone", "what": "run tabletop exercise with team using scenario similar to incident #427", "deadline": "next Thursday"},
+            {"who": "Tariq", "what": "tune alerting thresholds to reduce duplicate alert noise", "deadline": "next Friday"},
+        ],
+    },
+    "hard_15": {
+        "difficulty": "hard",
+        "description": "Meeting where multiple items are assigned to the same person across different topics.",
+        "transcript": (
+            "Sprint wrap-up and planning — Friday 11 AM\n"
+            "PM: Quick wrap-up of sprint 8, then plan sprint 9.\n"
+            "PM: Umar, the search performance fix from sprint 8 — did it land?\n"
+            "Umar: Partial. The index optimization is done but the cache warming "
+            "needs more work.\n"
+            "PM: Okay. Umar, finish the cache warming implementation. Carry it to "
+            "sprint 9. Due next Wednesday.\n"
+            "Umar: Got it.\n"
+            "PM: New items for sprint 9. First, the user preferences API.\n"
+            "Vera: I can take that.\n"
+            "PM: Vera, implement the user preferences CRUD endpoints. Design doc "
+            "is in Notion. Due next Thursday.\n"
+            "PM: Second, we need better error pages. Umar, you touched the frontend "
+            "last sprint — design and implement custom 404 and 500 error pages. "
+            "Due next Friday.\n"
+            "Umar: That's two things for me.\n"
+            "PM: You can handle it. They're independent.\n"
+            "PM: Third, monitoring. Vera, also add request latency metrics to the "
+            "new preferences endpoints as you build them. Same deadline.\n"
+            "Vera: I'll instrument with Prometheus.\n"
+            "PM: Good sprint plan."
+        ),
+        "ground_truth": [
+            {"who": "Umar", "what": "finish cache warming implementation for search", "deadline": "next Wednesday"},
+            {"who": "Vera", "what": "implement user preferences CRUD endpoints", "deadline": "next Thursday"},
+            {"who": "Umar", "what": "design and implement custom 404 and 500 error pages", "deadline": "next Friday"},
+            {"who": "Vera", "what": "add request latency metrics to preferences endpoints", "deadline": "next Thursday"},
+        ],
+    },
+    "hard_16": {
+        "difficulty": "hard",
+        "description": "Meeting with abandoned proposals mixed in with real assignments.",
+        "transcript": (
+            "Product strategy — Tuesday 3 PM\n"
+            "CPO: Let's discuss three proposals.\n"
+            "CPO: Proposal 1: Rebuild the notification system from scratch.\n"
+            "Dev Lead: That's a 6-month project. We don't have bandwidth.\n"
+            "CPO: You're right. Proposal 1 is killed. Don't work on it.\n"
+            "CPO: Proposal 2: Add real-time collaboration to documents.\n"
+            "Dev Lead: We could use CRDTs. It's doable in 4 weeks.\n"
+            "CPO: Let's do it. Wanda, you led the document editor. Prototype "
+            "real-time collaboration using CRDTs. Show a working demo in 2 weeks.\n"
+            "Wanda: Exciting. I'll start with OT evaluation too.\n"
+            "CPO: Stick to CRDTs, don't evaluate OT. Focus.\n"
+            "CPO: Proposal 3: AI-powered content suggestions.\n"
+            "Dev Lead: Interesting but legally risky — training data concerns.\n"
+            "CPO: Good point. Proposal 3 is parked until legal clears it. Do NOT "
+            "start any work on AI content suggestions.\n"
+            "CPO: So to be clear: only Proposal 2 is a go. Wanda on the prototype.\n"
+            "CPO: Also, unrelated — Xander, the quarterly product metrics report "
+            "is overdue. Get it to me by Thursday.\n"
+            "Xander: Sorry, I'll have it done.\n"
+            "CPO: And Yuki from analytics, I need a funnel analysis for the new "
+            "signup flow. Can you get that done by next Monday?\n"
+            "Yuki: Yes, I'll pull the data from Mixpanel.\n"
+            "CPO: Good meeting."
+        ),
+        "ground_truth": [
+            {"who": "Wanda", "what": "prototype real-time collaboration using CRDTs and show working demo", "deadline": "2 weeks"},
+            {"who": "Xander", "what": "complete quarterly product metrics report", "deadline": "Thursday"},
+            {"who": "Yuki", "what": "produce funnel analysis for new signup flow", "deadline": "next Monday"},
+        ],
+    },
+    "hard_17": {
+        "difficulty": "hard",
+        "description": "Multi-timezone async standup with tasks spread across regions.",
+        "transcript": (
+            "Global team async standup — compiled from Slack posts — Wednesday\n\n"
+            "--- US Team (posted 9 AM EST) ---\n"
+            "Alice (US): Finished the payment integration. Ready for QA.\n"
+            "Bob (US): Blocked on the EU data residency requirements. Need clarity "
+            "from legal.\n"
+            "Manager: Bob, set up a call with the EU legal team and get data residency "
+            "requirements clarified by Friday.\n\n"
+            "--- EU Team (posted 9 AM CET) ---\n"
+            "Clara (EU): The GDPR consent banner is almost done. Will push today.\n"
+            "Dmitri (EU): Found a performance regression in the EU search cluster. "
+            "Investigating.\n"
+            "Manager: Dmitri, fix the EU search cluster performance regression and "
+            "write a brief root cause summary. Target Monday.\n\n"
+            "--- APAC Team (posted 9 AM JST) ---\n"
+            "Emi (APAC): Localization for Japanese market is 80% done.\n"
+            "Manager: Emi, complete Japanese localization including all UI strings "
+            "and help docs. Deadline next Wednesday.\n"
+            "Feng (APAC): The APAC staging environment needs a refresh.\n"
+            "Manager: Feng, refresh the APAC staging environment with latest production "
+            "data snapshot. By end of this week.\n\n"
+            "Manager: Good updates everyone. Remember — the global launch is in 3 weeks."
+        ),
+        "ground_truth": [
+            {"who": "Bob", "what": "set up call with EU legal team and clarify data residency requirements", "deadline": "Friday"},
+            {"who": "Dmitri", "what": "fix EU search cluster performance regression and write root cause summary", "deadline": "Monday"},
+            {"who": "Emi", "what": "complete Japanese localization including all UI strings and help docs", "deadline": "next Wednesday"},
+            {"who": "Feng", "what": "refresh APAC staging environment with latest production data snapshot", "deadline": "end of this week"},
+        ],
+    },
+    "hard_18": {
+        "difficulty": "hard",
+        "description": "Board preparation meeting with executive-level tasks and implied deadlines.",
+        "transcript": (
+            "Board meeting preparation — Thursday 4 PM\n"
+            "CEO: Board meeting is April 15th. We have 10 days.\n"
+            "CEO: I need the financials deck. CFO?\n"
+            "CFO (Gabriella): I'm working on it. The revenue numbers are solid but "
+            "I need updated customer count from sales.\n"
+            "CEO: Sales VP — get customer numbers to Gabriella.\n"
+            "Sales VP (Henrik): I'll have them tomorrow.\n"
+            "CEO: Gabriella, with Henrik's numbers, I need the full financial deck "
+            "ready for my review by next Tuesday.\n"
+            "Gabriella: Understood.\n"
+            "CEO: The product roadmap slide — CTO, that's you.\n"
+            "CTO (Ivan): I'll update the roadmap. But should I include the AI strategy "
+            "or is that premature?\n"
+            "CEO: Include it. The board wants to see our AI direction.\n"
+            "CTO (Ivan): Then I'll need input from the research team.\n"
+            "CEO: Get it. Ivan, complete roadmap deck including AI strategy by next "
+            "Wednesday.\n"
+            "CEO: Finally, we promised the board a competitive analysis last time. "
+            "Strategy team?\n"
+            "Strategy Lead (Jess): I can have it ready. How detailed?\n"
+            "CEO: Detailed enough to show we understand the landscape. Include the "
+            "three new competitors that emerged last quarter. Jess, competitive "
+            "analysis deck by next Thursday.\n"
+            "Jess: I'll include market share estimates.\n"
+            "CEO: Perfect. Don't be late — I need two days to review before the board."
+        ),
+        "ground_truth": [
+            {"who": "Henrik", "what": "provide updated customer count numbers to Gabriella", "deadline": "tomorrow"},
+            {"who": "Gabriella", "what": "prepare full financial deck for CEO review", "deadline": "next Tuesday"},
+            {"who": "Ivan", "what": "complete product roadmap deck including AI strategy", "deadline": "next Wednesday"},
+            {"who": "Jess", "what": "prepare competitive analysis deck including three new competitors", "deadline": "next Thursday"},
+        ],
+    },
+    "hard_19": {
+        "difficulty": "hard",
+        "description": "Meeting where the same task is discussed multiple times with evolving scope.",
+        "transcript": (
+            "API v3 design review — Monday 2 PM\n"
+            "Architect: Let's finalize the v3 API.\n"
+            "Architect: Karl, write the API spec. Cover the user, billing, and "
+            "analytics endpoints.\n"
+            "Karl: Just the spec or implementation too?\n"
+            "Architect: Spec first. Actually wait — also include the webhook "
+            "endpoints. We forgot those last time.\n"
+            "Karl: So user, billing, analytics, and webhooks.\n"
+            "Architect: Yes. And add rate limit headers to the spec. All endpoints "
+            "should document their rate limits.\n"
+            "Karl: When do you need it?\n"
+            "Architect: Next Wednesday for the spec.\n"
+            "Architect: Laura, once Karl has the spec, implement the user endpoints "
+            "first. That's the critical path.\n"
+            "Laura: Timeline?\n"
+            "Architect: User endpoints implemented and tested by next Friday. Use the "
+            "spec as your contract.\n"
+            "Architect: Oh, Karl — one more thing. Include deprecation notices for all "
+            "v1 endpoints in the spec. Show migration paths.\n"
+            "Karl: So the spec scope is: user, billing, analytics, webhooks, rate "
+            "limits, and v1 deprecation notices. All by Wednesday?\n"
+            "Architect: Yes. It's a lot but the structure is standard.\n"
+            "Architect: Maria, review Karl's spec once it's ready. I want your "
+            "security review feedback by Thursday.\n"
+            "Maria: I'll block Thursday morning for it."
+        ),
+        "ground_truth": [
+            {"who": "Karl", "what": "write API v3 spec covering user billing analytics webhooks rate limits and v1 deprecation notices", "deadline": "next Wednesday"},
+            {"who": "Laura", "what": "implement and test user endpoints based on API v3 spec", "deadline": "next Friday"},
+            {"who": "Maria", "what": "provide security review feedback on API v3 spec", "deadline": "Thursday"},
+        ],
+    },
+    "hard_20": {
+        "difficulty": "hard",
+        "description": "Post-acquisition integration meeting with political dynamics and shared ownership.",
+        "transcript": (
+            "Post-acquisition integration planning — AcquireCo — Wednesday 10 AM\n\n"
+            "Integration Lead (Dana): Welcome AcquireCo team. Let's plan the integration.\n"
+            "Dana: First — systems. We need to merge the two CRM systems.\n"
+            "Our CTO (Erik): Our Salesforce instance is the system of record.\n"
+            "AcquireCo CTO (Fiona): Our HubSpot has 5 years of customer history. "
+            "We can't just abandon it.\n"
+            "Dana: We're not abandoning anything. We'll migrate HubSpot data into "
+            "Salesforce. Erik and Fiona, jointly own the CRM migration plan. I need "
+            "a joint proposal by next Friday.\n"
+            "Erik: We'll need to map the data schemas.\n"
+            "Fiona: My team will document our HubSpot schema this week.\n"
+            "Dana: Good. Second — the engineering teams are on different tech stacks. "
+            "We need a unified CI/CD pipeline.\n"
+            "Erik: George from my DevOps team can lead that.\n"
+            "Dana: George, assess both CI/CD setups and propose a unified pipeline. "
+            "Assessment due next Wednesday.\n"
+            "George: I'll need access to AcquireCo's repos.\n"
+            "Fiona: I'll grant access today.\n"
+            "Dana: Third — customer communications. Our customers and theirs need to "
+            "know what's changing.\n"
+            "Dana: Marketing — Hanna, draft a joint customer communication plan. "
+            "Coordinate with AcquireCo's marketing lead. Plan due next Thursday.\n"
+            "Hanna: Who's their marketing lead?\n"
+            "Fiona: That would be Ines.\n"
+            "Dana: Hanna and Ines, work together on this.\n"
+            "Dana: Fourth — we need a single on-call rotation. Can't have two separate "
+            "incident response processes.\n"
+            "Erik: My SRE team will absorb theirs.\n"
+            "Fiona: My team won't appreciate being 'absorbed'. Let's co-design it.\n"
+            "Dana: Fair point. Erik, propose a unified on-call rotation that includes "
+            "both teams equitably. Draft by next Friday.\n"
+            "Erik: Understood.\n"
+            "Dana: Weekly syncs starting next Monday. No surprises."
+        ),
+        "ground_truth": [
+            {"who": "Erik and Fiona", "what": "create joint CRM migration plan from HubSpot to Salesforce", "deadline": "next Friday"},
+            {"who": "George", "what": "assess both CI/CD setups and propose unified pipeline", "deadline": "next Wednesday"},
+            {"who": "Hanna", "what": "draft joint customer communication plan with AcquireCo marketing", "deadline": "next Thursday"},
+            {"who": "Erik", "what": "propose unified on-call rotation including both teams equitably", "deadline": "next Friday"},
         ],
     },
 }

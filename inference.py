@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Baseline inference for the Meeting Notes → Action Items environment.
+"""Baseline multi-step inference for the Meeting Notes environment.
+
+The agent uses an LLM to extract action items from meeting transcripts,
+submitting them one at a time and revising low-scoring items based on
+per-step feedback from the environment.
 
 Required environment variables:
     API_BASE_URL  — OpenAI-compatible endpoint (must have a default)
@@ -12,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from typing import Any, Dict, List
 
 import requests
 from openai import OpenAI
@@ -30,22 +35,26 @@ if HF_TOKEN is None:
 ENV_URL = os.getenv("ENV_URL", "https://prateekdebit-meeting-notes-env.hf.space")
 
 # ---------------------------------------------------------------------------
-# Tasks to evaluate (3 difficulty levels × 2 each = 6)
+# Tasks
 # ---------------------------------------------------------------------------
 
 TASK_IDS = [
-    # Easy (10)
+    # Easy (15)
     "easy_1", "easy_2", "easy_3", "easy_4", "easy_5",
     "easy_6", "easy_7", "easy_8", "easy_9", "easy_10",
-    # Medium (10)
+    "easy_11", "easy_12", "easy_13", "easy_14", "easy_15",
+    # Medium (15)
     "medium_1", "medium_2", "medium_3", "medium_4", "medium_5",
     "medium_6", "medium_7", "medium_8", "medium_9", "medium_10",
-    # Hard (12)
+    "medium_11", "medium_12", "medium_13", "medium_14", "medium_15",
+    # Hard (20)
     "hard_1", "hard_2", "hard_3", "hard_4", "hard_5", "hard_6",
     "hard_7", "hard_8", "hard_9", "hard_10", "hard_11", "hard_12",
+    "hard_13", "hard_14", "hard_15", "hard_16", "hard_17", "hard_18",
+    "hard_19", "hard_20",
 ]
 
-SYSTEM_PROMPT = """\
+EXTRACT_PROMPT = """\
 You are an expert meeting-notes analyst. Given a meeting transcript, extract \
 ALL action items as a JSON array. Each item must have exactly three keys:
 - "who": the person responsible (use their name as it appears in the transcript)
@@ -56,6 +65,23 @@ Return ONLY the JSON array, no markdown, no explanation. Example:
 [{"who":"Alice","what":"send the report","deadline":"Friday"}]
 If there are multiple action items return them all in the array."""
 
+REVISE_PROMPT = """\
+You previously extracted an action item from a meeting transcript but it scored \
+poorly. Revise it to better match the original transcript.
+
+Transcript:
+{transcript}
+
+Your previous answer for this item:
+who: {who}
+what: {what}
+deadline: {deadline}
+
+Feedback from the grader: {feedback}
+
+Return ONLY a single JSON object with keys "who", "what", "deadline". \
+Be more precise — use exact names and phrases from the transcript."""
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -63,19 +89,11 @@ If there are multiple action items return them all in the array."""
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
 
-def call_llm(transcript: str, num_expected: int) -> str:
-    user_msg = (
-        f"Meeting transcript:\n\n{transcript}\n\n"
-        f"There are {num_expected} action item(s) to find. "
-        "Return ONLY the JSON array."
-    )
+def call_llm(messages: List[Dict[str, str]], max_tokens: int = 1024) -> str:
     response = client.chat.completions.create(
         model=MODEL_NAME,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_msg},
-        ],
-        max_tokens=1024,
+        messages=messages,
+        max_tokens=max_tokens,
         temperature=0.0,
     )
     return response.choices[0].message.content.strip()
@@ -91,104 +109,180 @@ def clean_json(raw: str) -> str:
 
 
 def env_reset(task_id: str) -> dict:
-    resp = requests.post(
-        f"{ENV_URL}/reset",
-        json={"task": task_id},
-        timeout=60,
-    )
+    resp = requests.post(f"{ENV_URL}/reset", json={"task": task_id}, timeout=60)
     resp.raise_for_status()
     return resp.json()
 
 
-def env_step(message: str) -> dict:
-    resp = requests.post(
-        f"{ENV_URL}/step",
-        json={"action": {"message": message}},
-        timeout=60,
-    )
+def env_step(action: Dict[str, Any]) -> dict:
+    resp = requests.post(f"{ENV_URL}/step", json={"action": action}, timeout=60)
     resp.raise_for_status()
     return resp.json()
 
 
+def extract_items(transcript: str, num_expected: int) -> List[Dict[str, str]]:
+    """Use LLM to extract all action items from a transcript."""
+    user_msg = (
+        f"Meeting transcript:\n\n{transcript}\n\n"
+        f"There are {num_expected} action item(s) to find. "
+        "Return ONLY the JSON array."
+    )
+    raw = call_llm([
+        {"role": "system", "content": EXTRACT_PROMPT},
+        {"role": "user", "content": user_msg},
+    ])
+    cleaned = clean_json(raw)
+    try:
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        return parsed if isinstance(parsed, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+def revise_item(
+    transcript: str, item: Dict[str, str], feedback: str
+) -> Dict[str, str]:
+    """Use LLM to revise a poorly-scoring item."""
+    prompt = REVISE_PROMPT.format(
+        transcript=transcript,
+        who=item.get("who", ""),
+        what=item.get("what", ""),
+        deadline=item.get("deadline", ""),
+        feedback=feedback,
+    )
+    raw = call_llm([
+        {"role": "system", "content": "You are an expert meeting-notes analyst."},
+        {"role": "user", "content": prompt},
+    ], max_tokens=256)
+    cleaned = clean_json(raw)
+    try:
+        parsed = json.loads(cleaned)
+        return parsed if isinstance(parsed, dict) else item
+    except json.JSONDecodeError:
+        return item
+
+
 # ---------------------------------------------------------------------------
-# Main
+# Main — multi-step agent loop
 # ---------------------------------------------------------------------------
+
+REVISE_THRESHOLD = 0.5
 
 def main() -> None:
     for task_id in TASK_IDS:
         all_rewards: list[float] = []
         success = False
         steps = 0
-        last_error = "null"
+        transcript = ""
 
         try:
-            # --- [START] ---
             print(
                 f"[START] task={task_id} env=meeting_notes_env model={MODEL_NAME}",
                 flush=True,
             )
 
-            # Reset to get transcript
             reset_data = env_reset(task_id)
             obs = reset_data.get("observation", reset_data)
             transcript = obs.get("transcript", "")
             num_expected = obs.get("num_expected", 0)
 
-            # Call LLM
-            raw_answer = call_llm(transcript, num_expected)
-            cleaned = clean_json(raw_answer)
+            items = extract_items(transcript, num_expected)
 
-            try:
-                parsed = json.loads(cleaned)
-                if isinstance(parsed, dict):
-                    parsed = [parsed]
-                items = parsed
-            except json.JSONDecodeError:
-                items = []
+            for i, item in enumerate(items):
+                action = {
+                    "action_type": "submit_item",
+                    "who": item.get("who", ""),
+                    "what": item.get("what", ""),
+                    "deadline": item.get("deadline", ""),
+                }
+                step_data = env_step(action)
+                step_obs = step_data.get("observation", step_data)
+                reward = float(step_data.get("reward", step_obs.get("reward", 0.0)) or 0.0)
+                done = step_data.get("done", step_obs.get("done", False))
+                feedback = step_obs.get("feedback", "")
+                error_str = step_obs.get("metadata", {}).get("error", None)
 
-            action_str = json.dumps(items)
+                steps += 1
+                all_rewards.append(reward)
 
-            # Build combined payload so stateless HTTP step knows the task
-            step_payload = json.dumps({"task_id": task_id, "items": items})
+                action_str = json.dumps(action)
+                print(
+                    f"[STEP] step={steps} action={action_str} "
+                    f"reward={reward:.2f} done={'true' if done else 'false'} "
+                    f"error={error_str or 'null'}",
+                    flush=True,
+                )
 
-            # Step
-            step_data = env_step(step_payload)
-            step_obs = step_data.get("observation", step_data)
-            reward = float(step_data.get("reward", step_obs.get("reward", 0.0)) or 0.0)
-            done = step_data.get("done", step_obs.get("done", True))
-            error_str = step_obs.get("metadata", {}).get("error", None)
+                if done:
+                    break
 
-            steps = 1
-            all_rewards.append(reward)
-            success = reward > 0.0
+                submitted = step_obs.get("submitted_items", [])
+                if submitted and submitted[-1].get("score", 1.0) < REVISE_THRESHOLD:
+                    revised = revise_item(transcript, item, feedback)
+                    rev_action = {
+                        "action_type": "revise_item",
+                        "item_index": len(submitted) - 1,
+                        "who": revised.get("who", ""),
+                        "what": revised.get("what", ""),
+                        "deadline": revised.get("deadline", ""),
+                    }
+                    step_data = env_step(rev_action)
+                    step_obs = step_data.get("observation", step_data)
+                    reward = float(step_data.get("reward", step_obs.get("reward", 0.0)) or 0.0)
+                    done = step_data.get("done", step_obs.get("done", False))
+                    error_str = step_obs.get("metadata", {}).get("error", None)
 
-            # --- [STEP] ---
-            done_str = "true" if done else "false"
-            error_out = error_str if error_str else "null"
-            print(
-                f"[STEP] step=1 action={action_str} "
-                f"reward={reward:.2f} done={done_str} error={error_out}",
-                flush=True,
-            )
+                    steps += 1
+                    all_rewards.append(reward)
+
+                    rev_action_str = json.dumps(rev_action)
+                    print(
+                        f"[STEP] step={steps} action={rev_action_str} "
+                        f"reward={reward:.2f} done={'true' if done else 'false'} "
+                        f"error={error_str or 'null'}",
+                        flush=True,
+                    )
+
+                    if done:
+                        break
+
+            if not done:
+                fin_action = {"action_type": "finalize"}
+                step_data = env_step(fin_action)
+                step_obs = step_data.get("observation", step_data)
+                reward = float(step_data.get("reward", step_obs.get("reward", 0.0)) or 0.0)
+                error_str = step_obs.get("metadata", {}).get("error", None)
+
+                steps += 1
+                all_rewards.append(reward)
+
+                print(
+                    f"[STEP] step={steps} action={{\"action_type\":\"finalize\"}} "
+                    f"reward={reward:.2f} done=true error={error_str or 'null'}",
+                    flush=True,
+                )
+
+            final_score = all_rewards[-1] if all_rewards else 0.01
+            success = final_score > 0.3
 
         except Exception as exc:
-            last_error = str(exc)
             if not all_rewards:
-                all_rewards.append(0.0)
+                all_rewards.append(0.01)
             steps = max(steps, 1)
             print(
                 f"[STEP] step={steps} action=error "
-                f"reward=0.00 done=true error={last_error}",
+                f"reward=0.01 done=true error={exc}",
                 flush=True,
             )
+            final_score = 0.01
 
-        # --- [END] ---
-        score = all_rewards[-1] if all_rewards else 0.0
-        score = min(max(score, 0.0), 1.0)
+        final_score = min(max(final_score, 0.01), 0.99)
         success_str = "true" if success else "false"
         rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
         print(
-            f"[END] success={success_str} steps={steps} score={score:.2f} rewards={rewards_str}",
+            f"[END] success={success_str} steps={steps} score={final_score:.2f} rewards={rewards_str}",
             flush=True,
         )
 
