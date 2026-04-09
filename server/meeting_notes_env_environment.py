@@ -3,7 +3,7 @@
 The server holds meeting transcripts with ground-truth action items.
 On reset(task=...) the agent receives a transcript.
 On step(action) the agent submits its extracted action items (JSON) and
-receives a reward in [0.0, 1.0] based on semantic matching against ground truth.
+receives a reward in (0, 1) based on semantic matching against ground truth.
 """
 
 from __future__ import annotations
@@ -38,6 +38,14 @@ TASK_IDS_BY_DIFFICULTY = {
 }
 
 ALL_TASK_IDS = list(TASKS.keys())
+
+REWARD_MIN = 0.01
+REWARD_MAX = 0.99
+
+
+def _clamp_reward(r: float) -> float:
+    """Clamp reward to the open interval (0, 1) as required by the hackathon spec."""
+    return max(REWARD_MIN, min(REWARD_MAX, r))
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +179,7 @@ def _grade_action_items(
       who=0.30, what=0.40, deadline=0.30
     """
     if not expected:
-        return (1.0, "No action items expected.") if not predicted else (0.0, "No items expected but you returned some.")
+        return (REWARD_MAX, "No action items expected.") if not predicted else (REWARD_MIN, "No items expected but you returned some.")
 
     matched_preds: set[int] = set()
     item_scores: list[float] = []
@@ -216,7 +224,7 @@ def _grade_action_items(
     extra = max(0, len(predicted) - len(expected))
     missing = len(expected) - len(matched_preds)
     penalty = extra * 0.05 + missing * 0.02
-    reward = max(0.0, min(1.0, reward - penalty))
+    reward = _clamp_reward(reward - penalty)
 
     feedback = "; ".join(details) + f" | Extra: {extra}, Missing: {missing} | Final: {reward:.4f}"
     return round(reward, 4), feedback
@@ -265,7 +273,7 @@ class MeetingNotesEnvironment(Environment):
             feedback="",
             num_expected=len(t["ground_truth"]),
             done=False,
-            reward=0.0,
+            reward=REWARD_MIN,
             metadata={"difficulty": t["difficulty"]},
         )
 
@@ -280,7 +288,7 @@ class MeetingNotesEnvironment(Environment):
                 feedback="Episode already done. Call reset().",
                 num_expected=0,
                 done=True,
-                reward=0.0,
+                reward=REWARD_MIN,
             )
 
         if not self._current_task_id:
@@ -321,11 +329,12 @@ class MeetingNotesEnvironment(Environment):
                 feedback=f"Invalid JSON: {e}",
                 num_expected=len(expected),
                 done=True,
-                reward=0.0,
+                reward=REWARD_MIN,
                 metadata={"error": str(e)},
             )
 
         reward, feedback = _grade_action_items(predicted, expected)
+        reward = _clamp_reward(reward)
         self._done = True
 
         return MeetingNotesObservation(
