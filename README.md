@@ -108,7 +108,7 @@ Per-item score = `0.30 × who + 0.40 × what + 0.30 × deadline`
 
 ## Quick Start
 
-**Live Space:** [prateekdebit/meeting-notes-env](https://huggingface.co/spaces/prateekdebit/meeting-notes-env) — public API base URL: **`https://prateekdebit-meeting-notes-env.hf.space`** (first request may wake the Space and take longer). If that host 404s, rename the Space on Hugging Face to `meeting-notes-env` (see below) or use the suffixed `*.hf.space` URL from the Space page HTML until the short URL propagates.
+**Live Space:** [prateekdebit/meeting-notes-env](https://huggingface.co/spaces/prateekdebit/meeting-notes-env) — public API base URL: **`https://prateekdebit-meeting-notes-env.hf.space`** (first request may wake the Space and take longer). If you still see a hash suffix in the app URL, use the `*.hf.space` link shown on your Space page until routing updates.
 
 ### API Interaction (local)
 
@@ -207,25 +207,38 @@ meeting_notes_env/
 
 ## Hugging Face: canonical name and short URL
 
-The Space repository id is **`meeting-notes-env`** (hyphens), matching [GitHub `meeting-notes-env`](https://github.com/Prateedk/meeting-notes-env). That gives the clean app host **`https://prateekdebit-meeting-notes-env.hf.space`** (no hash suffix).
+The Space id **`prateekdebit/meeting-notes-env`** (hyphens) matches [GitHub `meeting-notes-env`](https://github.com/Prateedk/meeting-notes-env). The usual app host is **`https://prateekdebit-meeting-notes-env.hf.space`**.
 
-### One-time rename (if the Space still shows `meeting_notes_env`)
+### Rename or transfer (Hugging Face Settings)
 
-1. Open the Space **Settings** on Hugging Face.
-2. Set **Repository name** to **`meeting-notes-env`** and save. (Remove or avoid a second Space with the same slug, or Hugging Face will assign a disambiguating suffix in the `*.hf.space` hostname.)
-3. Run `git remote set-url huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git` and `git push huggingface main` (see **Updating the Hugging Face Space** below).
+Hugging Face does this under **Settings → “Rename or transfer this Space”** (not a separate “repository name” field). After you change the name:
+
+- Web links and **git** operations **redirect** from the old URL to the new one, but you should still **update local remotes** to avoid confusion.
+
+Update an existing clone:
+
+```bash
+git remote set-url huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git
+git remote -v   # confirm
+git fetch huggingface
+```
+
+If you never added the remote:
+
+```bash
+git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git
+```
+
+Use the same path if you chose a **different** Space name—replace `meeting-notes-env` with your actual slug.
 
 ## Updating the Hugging Face Space
 
-Pushes to the Space repository trigger a new Docker build. From your local clone:
+Pushes to the Space repository trigger a new Docker build:
 
 ```bash
-# After the Space is renamed to meeting-notes-env (recommended):
-git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git  # once
 git push huggingface main
-
-# If the Space is still named meeting_notes_env on the Hub, use this URL until you rename:
-# git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting_notes_env.git
 ```
+
+Ensure `huggingface` points at your current Space URL (see above). The old `.../meeting_notes_env.git` URL may still redirect after a rename, but pointing `git` at the new URL is clearer.
 
 Use your Hugging Face **access token** as the password when prompted (or configure [git credential storage](https://huggingface.co/docs/hub/security-tokens)). If the Space still looks outdated, open the Space **Build** logs and confirm the latest commit built successfully; failed builds keep serving the previous image.
