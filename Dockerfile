@@ -20,6 +20,10 @@ WORKDIR /app/env
 # Install dependencies
 RUN uv sync --frozen --no-editable
 
+# Gradio UI at /web; "/" redirects there (OpenEnv). Without this, HF Space homepage is 404.
+ENV ENABLE_WEB_INTERFACE=true
+ENV SPACE_ID=prateekdebit/meeting_notes_env
+
 # Set PATH to use the virtual environment
 ENV PATH="/app/env/.venv/bin:$PATH"
 

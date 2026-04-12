@@ -1,5 +1,7 @@
 """FastAPI application for the Meeting Notes Environment."""
 
+from fastapi.responses import RedirectResponse
+
 try:
     from openenv.core.env_server.http_server import create_app
 except Exception as e:
@@ -21,6 +23,13 @@ app = create_app(
     env_name="meeting_notes_env",
     max_concurrent_envs=4,
 )
+
+# API-only OpenEnv apps omit "/"; HF Spaces open "/" by default — send users somewhere useful.
+if not any(getattr(r, "path", None) == "/" for r in app.routes):
+
+    @app.get("/", include_in_schema=False)
+    async def _root_redirect_to_docs():
+        return RedirectResponse(url="/docs")
 
 # Discourage any proxy/CDN from serving stale API responses on the canonical *.hf.space host.
 from starlette.requests import Request

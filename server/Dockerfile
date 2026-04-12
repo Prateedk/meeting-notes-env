@@ -56,6 +56,10 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
+# Match root Dockerfile: Gradio at /web, "/" works on Hugging Face Spaces
+ENV ENABLE_WEB_INTERFACE=true
+ENV SPACE_ID=prateekdebit/meeting_notes_env
+
 # Copy the virtual environment from builder
 COPY --from=builder /app/env/.venv /app/.venv
 
