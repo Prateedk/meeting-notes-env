@@ -213,16 +213,19 @@ The Space repository id is **`meeting-notes-env`** (hyphens), matching [GitHub `
 
 1. Open the Space **Settings** on Hugging Face.
 2. Set **Repository name** to **`meeting-notes-env`** and save. (Remove or avoid a second Space with the same slug, or Hugging Face will assign a disambiguating suffix in the `*.hf.space` hostname.)
+3. Run `git remote set-url huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git` and `git push huggingface main` (see **Updating the Hugging Face Space** below).
 
 ## Updating the Hugging Face Space
 
 Pushes to the Space repository trigger a new Docker build. From your local clone:
 
 ```bash
+# After the Space is renamed to meeting-notes-env (recommended):
 git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git  # once
-# or, if the remote already exists:
-git remote set-url huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git
 git push huggingface main
+
+# If the Space is still named meeting_notes_env on the Hub, use this URL until you rename:
+# git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting_notes_env.git
 ```
 
 Use your Hugging Face **access token** as the password when prompted (or configure [git credential storage](https://huggingface.co/docs/hub/security-tokens)). If the Space still looks outdated, open the Space **Build** logs and confirm the latest commit built successfully; failed builds keep serving the previous image.
