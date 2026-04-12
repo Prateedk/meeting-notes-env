@@ -5,6 +5,7 @@ colorFrom: blue
 colorTo: indigo
 sdk: docker
 pinned: false
+app_port: 8000
 ---
 
 # Meeting Notes → Action Items Environment
@@ -107,7 +108,9 @@ Per-item score = `0.30 × who + 0.40 × what + 0.30 × deadline`
 
 ## Quick Start
 
-### API Interaction
+**Live Space:** [prateekdebit/meeting_notes_env](https://huggingface.co/spaces/prateekdebit/meeting_notes_env) — public API base URL: `https://prateekdebit-meeting-notes-env.hf.space` (first request may wake the Space and take longer).
+
+### API Interaction (local)
 
 ```bash
 # Reset to a specific task
@@ -136,10 +139,24 @@ curl -X POST http://localhost:8000/step \
   -d '{"action": {"action_type": "finalize"}}'
 ```
 
+### API Interaction (deployed Space)
+
+Use the same paths as above with the Space base URL (or set `BASE` once):
+
+```bash
+export BASE=https://prateekdebit-meeting-notes-env.hf.space
+
+curl -X POST "$BASE/reset" \
+  -H "Content-Type: application/json" \
+  -d '{"task": "easy_1"}'
+```
+
 ### Run Baseline Inference
 
 ```bash
 export HF_TOKEN=hf_...
+# Optional: override environment URL (default in inference.py is the Space above)
+# export ENV_URL=https://prateekdebit-meeting-notes-env.hf.space
 python inference.py
 ```
 
@@ -186,4 +203,15 @@ meeting_notes_env/
 | `API_BASE_URL` | No | `https://router.huggingface.co/v1` | LLM endpoint |
 | `MODEL_NAME` | No | `Qwen/Qwen2.5-72B-Instruct` | Model identifier |
 | `HF_TOKEN` | Yes | — | Hugging Face API token |
-| `ENV_URL` | No | HF Space URL | Environment server URL |
+| `ENV_URL` | No | `https://prateekdebit-meeting-notes-env.hf.space` | Environment server URL |
+
+## Updating the Hugging Face Space
+
+Pushes to the Space repository trigger a new Docker build. From your local clone of this project:
+
+```bash
+git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting_notes_env  # once
+git push huggingface main
+```
+
+Use your Hugging Face **access token** as the password when prompted (or configure [git credential storage](https://huggingface.co/docs/hub/security-tokens)). If the Space still looks outdated, open the Space **Build** logs on Hugging Face and confirm the latest commit built successfully; failed builds keep serving the previous image.
