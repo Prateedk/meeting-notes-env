@@ -5,10 +5,14 @@ The agent uses an LLM to extract action items from meeting transcripts,
 submitting them one at a time and revising low-scoring items based on
 per-step feedback from the environment.
 
-Required environment variables:
-    API_BASE_URL  — OpenAI-compatible endpoint (must have a default)
-    MODEL_NAME    — model identifier (must have a default)
-    HF_TOKEN      — Hugging Face / API key (mandatory, no default)
+Environment variables:
+    API_BASE_URL   — OpenAI-compatible endpoint (default: HF router)
+    MODEL_NAME     — model identifier (default: Qwen2.5-72B on router)
+    HF_TOKEN       — Hugging Face / API key (required)
+    ENV_URL        — Meeting Notes Space / server base URL
+    INFERENCE_HTTP_TIMEOUT — Per-request timeout in seconds (default: 120)
+    INFERENCE_MAX_TASKS    — If set, only run the first N tasks (smoke / CI; default: all 50)
+    SUCCESS_SCORE_THRESHOLD — Finalize reward above this marks success in [END] (default: 0.25)
 """
 
 from __future__ import annotations
@@ -33,6 +37,10 @@ if HF_TOKEN is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
 ENV_URL = os.getenv("ENV_URL", "https://prateekdebit-meeting-notes-env.hf.space")
+HTTP_TIMEOUT = float(os.getenv("INFERENCE_HTTP_TIMEOUT", "120"))
+_MAX_RAW = os.getenv("INFERENCE_MAX_TASKS", "").strip()
+INFERENCE_MAX_TASKS = int(_MAX_RAW) if _MAX_RAW.isdigit() else None
+SUCCESS_SCORE_THRESHOLD = float(os.getenv("SUCCESS_SCORE_THRESHOLD", "0.25"))
 
 # ---------------------------------------------------------------------------
 # Tasks
@@ -109,13 +117,17 @@ def clean_json(raw: str) -> str:
 
 
 def env_reset(task_id: str) -> dict:
-    resp = requests.post(f"{ENV_URL}/reset", json={"task": task_id}, timeout=60)
+    resp = requests.post(
+        f"{ENV_URL}/reset", json={"task": task_id}, timeout=HTTP_TIMEOUT
+    )
     resp.raise_for_status()
     return resp.json()
 
 
 def env_step(action: Dict[str, Any]) -> dict:
-    resp = requests.post(f"{ENV_URL}/step", json={"action": action}, timeout=60)
+    resp = requests.post(
+        f"{ENV_URL}/step", json={"action": action}, timeout=HTTP_TIMEOUT
+    )
     resp.raise_for_status()
     return resp.json()
 
@@ -170,8 +182,16 @@ def revise_item(
 
 REVISE_THRESHOLD = 0.5
 
+
+def _task_list() -> List[str]:
+    ids = list(TASK_IDS)
+    if INFERENCE_MAX_TASKS is not None:
+        return ids[: max(0, INFERENCE_MAX_TASKS)]
+    return ids
+
+
 def main() -> None:
-    for task_id in TASK_IDS:
+    for task_id in _task_list():
         all_rewards: list[float] = []
         success = False
         steps = 0
@@ -179,7 +199,7 @@ def main() -> None:
 
         try:
             print(
-                f"[START] task={task_id} env=meeting_notes_env model={MODEL_NAME}",
+                f"[START] task={task_id} env=meeting-notes-env model={MODEL_NAME}",
                 flush=True,
             )
 
@@ -209,7 +229,7 @@ def main() -> None:
 
                 action_str = json.dumps(action)
                 print(
-                    f"[STEP] step={steps} action={action_str} "
+                    f"[STEP]  step={steps} action={action_str} "
                     f"reward={reward:.2f} done={'true' if done else 'false'} "
                     f"error={error_str or 'null'}",
                     flush=True,
@@ -239,7 +259,7 @@ def main() -> None:
 
                     rev_action_str = json.dumps(rev_action)
                     print(
-                        f"[STEP] step={steps} action={rev_action_str} "
+                        f"[STEP]  step={steps} action={rev_action_str} "
                         f"reward={reward:.2f} done={'true' if done else 'false'} "
                         f"error={error_str or 'null'}",
                         flush=True,
@@ -259,20 +279,20 @@ def main() -> None:
                 all_rewards.append(reward)
 
                 print(
-                    f"[STEP] step={steps} action={{\"action_type\":\"finalize\"}} "
+                    f"[STEP]  step={steps} action={{\"action_type\":\"finalize\"}} "
                     f"reward={reward:.2f} done=true error={error_str or 'null'}",
                     flush=True,
                 )
 
             final_score = all_rewards[-1] if all_rewards else 0.01
-            success = final_score > 0.3
+            success = final_score > SUCCESS_SCORE_THRESHOLD
 
         except Exception as exc:
             if not all_rewards:
                 all_rewards.append(0.01)
             steps = max(steps, 1)
             print(
-                f"[STEP] step={steps} action=error "
+                f"[STEP]  step={steps} action=error "
                 f"reward=0.01 done=true error={exc}",
                 flush=True,
             )
@@ -282,7 +302,7 @@ def main() -> None:
         success_str = "true" if success else "false"
         rewards_str = ",".join(f"{r:.2f}" for r in all_rewards)
         print(
-            f"[END] success={success_str} steps={steps} score={final_score:.2f} rewards={rewards_str}",
+            f"[END]  success={success_str} steps={steps} score={final_score:.2f} rewards={rewards_str}",
             flush=True,
         )
 

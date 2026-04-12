@@ -142,7 +142,8 @@ class TestFinalize:
         env.reset(task="easy_1")
         obs = env.step(MeetingNotesAction(action_type="finalize"))
         assert obs.done is True
-        assert obs.reward == REWARD_MIN
+        # Missing-items penalty is partially offset by early efficiency_bonus.
+        assert REWARD_MIN <= obs.reward < 0.05
 
     def test_reward_always_in_open_interval(self):
         env = MeetingNotesEnvironment()

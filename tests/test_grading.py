@@ -11,6 +11,9 @@ from server.meeting_notes_env_environment import (
     _bigram_overlap,
     _sequence_similarity,
     _tfidf_cosine,
+    _who_field_score,
+    _deadline_field_score,
+    _what_field_score,
     _score_single_item,
     _grade_all_submitted,
     REWARD_MIN,
@@ -62,6 +65,22 @@ class TestScoreSingleItem:
         score, idx, bd = _score_single_item(pred, expected, set())
         assert score > 0.9
         assert idx == 0
+
+    def test_paraphrase_easy_1(self):
+        pred = {
+            "who": "Bob",
+            "what": "repair the CI pipeline",
+            "deadline": "end of day Wednesday",
+        }
+        expected = [{"who": "Bob", "what": "fix the CI pipeline", "deadline": "Wednesday"}]
+        score, idx, _ = _score_single_item(pred, expected, set())
+        assert idx == 0
+        assert score > 0.75
+
+    def test_field_scores_helpers(self):
+        assert _who_field_score("Bob Smith", "Bob") >= 0.9
+        assert _deadline_field_score("end of day Wednesday", "Wednesday") >= 0.85
+        assert _what_field_score("repair the CI pipeline", "fix the CI pipeline") > 0.55
 
     def test_no_match_when_all_matched(self):
         pred = {"who": "Bob", "what": "fix CI", "deadline": "Wed"}

@@ -52,6 +52,8 @@ if [ -z "$PING_URL" ]; then
   printf "\n"
   printf "  ping_url   Your HuggingFace Space URL (e.g. https://your-space.hf.space)\n"
   printf "  repo_dir   Path to your repo (default: current directory)\n"
+  printf "\n"
+  printf "  SKIP_DOCKER=1   Run only Space ping + openenv validate (skip docker build)\n"
   exit 1
 fi
 
@@ -62,6 +64,11 @@ fi
 PING_URL="${PING_URL%/}"
 export PING_URL
 PASS=0
+TOTAL_STEPS=3
+SKIP_DOCKER="${SKIP_DOCKER:-0}"
+if [ "$SKIP_DOCKER" = "1" ] || [ "$SKIP_DOCKER" = "true" ]; then
+  TOTAL_STEPS=2
+fi
 
 log()  { printf "[%s] %b\n" "$(date -u +%H:%M:%S)" "$*"; }
 pass() { log "${GREEN}PASSED${NC} -- $1"; PASS=$((PASS + 1)); }
@@ -81,7 +88,7 @@ log "Repo:     $REPO_DIR"
 log "Ping URL: $PING_URL"
 printf "\n"
 
-log "${BOLD}Step 1/3: Pinging HF Space${NC} ($PING_URL/reset) ..."
+log "${BOLD}Step 1/${TOTAL_STEPS}: Pinging HF Space${NC} ($PING_URL/reset) ..."
 
 CURL_OUTPUT=$(portable_mktemp "validate-curl")
 CLEANUP_FILES+=("$CURL_OUTPUT")
@@ -103,42 +110,48 @@ else
   stop_at "Step 1"
 fi
 
-log "${BOLD}Step 2/3: Running docker build${NC} ..."
-
-if ! command -v docker &>/dev/null; then
-  fail "docker command not found"
-  hint "Install Docker: https://docs.docker.com/get-docker/"
-  stop_at "Step 2"
-fi
-
-if [ -f "$REPO_DIR/Dockerfile" ]; then
-  DOCKER_CONTEXT="$REPO_DIR"
-elif [ -f "$REPO_DIR/server/Dockerfile" ]; then
-  DOCKER_CONTEXT="$REPO_DIR/server"
+if [ "$SKIP_DOCKER" = "1" ] || [ "$SKIP_DOCKER" = "true" ]; then
+  log "Docker build skipped (SKIP_DOCKER=$SKIP_DOCKER)"
 else
-  fail "No Dockerfile found in repo root or server/ directory"
-  stop_at "Step 2"
+  log "${BOLD}Step 2/${TOTAL_STEPS}: Running docker build${NC} ..."
+
+  if ! command -v docker &>/dev/null; then
+    fail "docker command not found"
+    hint "Install Docker: https://docs.docker.com/get-docker/"
+    stop_at "Step 2"
+  fi
+
+  if [ -f "$REPO_DIR/Dockerfile" ]; then
+    DOCKER_CONTEXT="$REPO_DIR"
+  elif [ -f "$REPO_DIR/server/Dockerfile" ]; then
+    DOCKER_CONTEXT="$REPO_DIR/server"
+  else
+    fail "No Dockerfile found in repo root or server/ directory"
+    stop_at "Step 2"
+  fi
+
+  log "  Found Dockerfile in $DOCKER_CONTEXT"
+
+  BUILD_OK=false
+  BUILD_OUTPUT=$(run_with_timeout "$DOCKER_BUILD_TIMEOUT" docker build "$DOCKER_CONTEXT" 2>&1) && BUILD_OK=true
+
+  if [ "$BUILD_OK" = true ]; then
+    pass "Docker build succeeded"
+  else
+    fail "Docker build failed (timeout=${DOCKER_BUILD_TIMEOUT}s)"
+    printf "%s\n" "$BUILD_OUTPUT" | tail -20
+    stop_at "Step 2"
+  fi
 fi
 
-log "  Found Dockerfile in $DOCKER_CONTEXT"
-
-BUILD_OK=false
-BUILD_OUTPUT=$(run_with_timeout "$DOCKER_BUILD_TIMEOUT" docker build "$DOCKER_CONTEXT" 2>&1) && BUILD_OK=true
-
-if [ "$BUILD_OK" = true ]; then
-  pass "Docker build succeeded"
-else
-  fail "Docker build failed (timeout=${DOCKER_BUILD_TIMEOUT}s)"
-  printf "%s\n" "$BUILD_OUTPUT" | tail -20
-  stop_at "Step 2"
-fi
-
-log "${BOLD}Step 3/3: Running openenv validate${NC} ..."
+STEP_OPENENV=3
+[ "$TOTAL_STEPS" -eq 2 ] && STEP_OPENENV=2
+log "${BOLD}Step ${STEP_OPENENV}/${TOTAL_STEPS}: Running openenv validate${NC} ..."
 
 if ! command -v openenv &>/dev/null; then
   fail "openenv command not found"
   hint "Install it: pip install openenv-core"
-  stop_at "Step 3"
+  stop_at "Step ${STEP_OPENENV}"
 fi
 
 VALIDATE_OK=false
@@ -150,12 +163,12 @@ if [ "$VALIDATE_OK" = true ]; then
 else
   fail "openenv validate failed"
   printf "%s\n" "$VALIDATE_OUTPUT"
-  stop_at "Step 3"
+  stop_at "Step ${STEP_OPENENV}"
 fi
 
 printf "\n"
 printf "${BOLD}========================================${NC}\n"
-printf "${GREEN}${BOLD}  All 3/3 checks passed!${NC}\n"
+printf "${GREEN}${BOLD}  All ${TOTAL_STEPS}/${TOTAL_STEPS} checks passed!${NC}\n"
 printf "${GREEN}${BOLD}  Your submission is ready to submit.${NC}\n"
 printf "${BOLD}========================================${NC}\n"
 printf "\n"

@@ -150,6 +150,99 @@ def _semantic_score(predicted: str, expected: str) -> float:
     )
 
 
+_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "to",
+        "and",
+        "or",
+        "for",
+        "of",
+        "in",
+        "on",
+        "at",
+        "by",
+        "is",
+        "be",
+        "as",
+        "if",
+        "it",
+    }
+)
+
+_DEADLINE_NOISE = re.compile(
+    r"\b(end of day|eod|cob|close of business|before|no later than)\b",
+    re.IGNORECASE,
+)
+
+
+def _content_tokens(text: str) -> set[str]:
+    return {t for t in _tokenize(text) if t not in _STOPWORDS and len(t) > 1}
+
+
+def _who_field_score(pred: str, exp: str) -> float:
+    """Lexical similarity plus subset/superset name tokens (handles 'Bob' vs 'Bob Smith')."""
+    base = _semantic_score(pred, exp)
+    pt, et = _tokenize(pred), _tokenize(exp)
+    if not et and not pt:
+        return 1.0
+    if not pt or not et:
+        return base
+    pset, eset = set(pt), set(et)
+    if eset <= pset or pset <= eset:
+        return max(base, 0.92)
+    inter = eset & pset
+    if inter:
+        j = len(inter) / len(eset | pset)
+        return max(base, min(0.95, 0.72 + 0.28 * j))
+    return base
+
+
+def _simplify_deadline(text: str) -> str:
+    s = _DEADLINE_NOISE.sub(" ", text.lower())
+    s = re.sub(r"\b(by|before)\b", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _deadline_field_score(pred: str, exp: str) -> float:
+    """Same as semantic scoring but strips boilerplate ('end of day', 'EOD') and rewards containment."""
+    base = _semantic_score(pred, exp)
+    p0, e0 = pred.strip(), exp.strip()
+    if not e0 and not p0:
+        return 1.0
+    if not p0 or not e0:
+        return base
+    ps, es = _simplify_deadline(pred), _simplify_deadline(exp)
+    alt = _semantic_score(ps, es)
+    base = max(base, alt)
+    if es and ps and (es in ps or ps in es):
+        base = max(base, 0.88)
+    # Same calendar day / week phrase with high token overlap
+    if ps and es:
+        to = _token_overlap(ps, es)
+        if to >= 0.85:
+            base = max(base, 0.82 + 0.15 * to)
+    return min(1.0, base)
+
+
+def _what_field_score(pred: str, exp: str) -> float:
+    """Semantic score with a boost when most content words from GT appear (paraphrase-friendly)."""
+    base = _semantic_score(pred, exp)
+    pc, ec = _content_tokens(pred), _content_tokens(exp)
+    if not ec:
+        return 1.0 if not pc else base
+    if not pc:
+        return base
+    recall = len(pc & ec) / len(ec)
+    if recall >= 0.66:
+        return max(base, min(0.94, 0.58 + 0.36 * recall))
+    if recall >= 0.45:
+        return max(base, 0.48 + 0.35 * recall)
+    return base
+
+
 # ---------------------------------------------------------------------------
 # Per-item grading
 # ---------------------------------------------------------------------------
@@ -171,9 +264,9 @@ def _score_single_item(
     for gi, gt in enumerate(expected_items):
         if gi in already_matched:
             continue
-        who_s = _semantic_score(pred.get("who", ""), gt["who"])
-        what_s = _semantic_score(pred.get("what", ""), gt["what"])
-        dead_s = _semantic_score(pred.get("deadline", ""), gt["deadline"])
+        who_s = _who_field_score(pred.get("who", ""), gt["who"])
+        what_s = _what_field_score(pred.get("what", ""), gt["what"])
+        dead_s = _deadline_field_score(pred.get("deadline", ""), gt["deadline"])
         s = 0.30 * who_s + 0.40 * what_s + 0.30 * dead_s
         if s > best_score:
             best_score = s
