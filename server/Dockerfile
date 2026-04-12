@@ -22,7 +22,7 @@ RUN apt-get update && \
 
 # Build argument to control whether we're building standalone or in-repo
 ARG BUILD_MODE=in-repo
-ARG ENV_NAME=meeting_notes_env
+ARG ENV_NAME=meeting-notes-env
 
 # Copy environment code (always at root of build context)
 COPY . /app/env
@@ -58,7 +58,7 @@ WORKDIR /app
 
 # Match root Dockerfile: Gradio at /web, "/" works on Hugging Face Spaces
 ENV ENABLE_WEB_INTERFACE=true
-ENV SPACE_ID=prateekdebit/meeting_notes_env
+ENV SPACE_ID=prateekdebit/meeting-notes-env
 
 # Copy the virtual environment from builder
 COPY --from=builder /app/env/.venv /app/.venv

@@ -20,7 +20,7 @@ app = create_app(
     MeetingNotesEnvironment,
     MeetingNotesAction,
     MeetingNotesObservation,
-    env_name="meeting_notes_env",
+    env_name="meeting-notes-env",
     max_concurrent_envs=4,
 )
 

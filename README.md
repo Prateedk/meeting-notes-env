@@ -108,7 +108,7 @@ Per-item score = `0.30 × who + 0.40 × what + 0.30 × deadline`
 
 ## Quick Start
 
-**Live Space:** [prateekdebit/meeting_notes_env](https://huggingface.co/spaces/prateekdebit/meeting_notes_env) — public API base URL: `https://prateekdebit-meeting-notes-env.hf.space` (first request may wake the Space and take longer).
+**Live Space:** [prateekdebit/meeting-notes-env](https://huggingface.co/spaces/prateekdebit/meeting-notes-env) — public API base URL: **`https://prateekdebit-meeting-notes-env.hf.space`** (first request may wake the Space and take longer). If that host 404s, rename the Space on Hugging Face to `meeting-notes-env` (see below) or use the suffixed `*.hf.space` URL from the Space page HTML until the short URL propagates.
 
 ### API Interaction (local)
 
@@ -205,13 +205,24 @@ meeting_notes_env/
 | `HF_TOKEN` | Yes | — | Hugging Face API token |
 | `ENV_URL` | No | `https://prateekdebit-meeting-notes-env.hf.space` | Environment server URL |
 
+## Hugging Face: canonical name and short URL
+
+The Space repository id is **`meeting-notes-env`** (hyphens), matching [GitHub `meeting-notes-env`](https://github.com/Prateedk/meeting-notes-env). That gives the clean app host **`https://prateekdebit-meeting-notes-env.hf.space`** (no hash suffix).
+
+### One-time rename (if the Space still shows `meeting_notes_env`)
+
+1. Open the Space **Settings** on Hugging Face.
+2. Set **Repository name** to **`meeting-notes-env`** and save. (Remove or avoid a second Space with the same slug, or Hugging Face will assign a disambiguating suffix in the `*.hf.space` hostname.)
+
 ## Updating the Hugging Face Space
 
-Pushes to the Space repository trigger a new Docker build. From your local clone of this project:
+Pushes to the Space repository trigger a new Docker build. From your local clone:
 
 ```bash
-git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting_notes_env  # once
+git remote add huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git  # once
+# or, if the remote already exists:
+git remote set-url huggingface https://huggingface.co/spaces/prateekdebit/meeting-notes-env.git
 git push huggingface main
 ```
 
-Use your Hugging Face **access token** as the password when prompted (or configure [git credential storage](https://huggingface.co/docs/hub/security-tokens)). If the Space still looks outdated, open the Space **Build** logs on Hugging Face and confirm the latest commit built successfully; failed builds keep serving the previous image.
+Use your Hugging Face **access token** as the password when prompted (or configure [git credential storage](https://huggingface.co/docs/hub/security-tokens)). If the Space still looks outdated, open the Space **Build** logs and confirm the latest commit built successfully; failed builds keep serving the previous image.

@@ -1,5 +1,5 @@
 spec_version: 1
-name: meeting_notes_env
+name: meeting-notes-env
 type: space
 runtime: fastapi
 app: server.app:app
